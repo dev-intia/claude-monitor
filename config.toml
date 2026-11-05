@@ -1,0 +1,56 @@
+# claude-monitor: every threshold and weight lives here.
+# These are first estimates, not exact figures: adjust them as you learn.
+# Restart the panel after editing this file.
+
+[server]
+port = 8765              # Fixed port. If busy, the panel exits with an error; it never picks another.
+refresh_seconds = 3      # How often transcripts are re-read, and how often the page asks for data.
+
+[paths]
+claude_dir = "~/.claude"          # Read-only.
+state_dir = "~/.claude-monitor"   # Panel cache, notification memory and the hook's event file.
+
+[scan]
+first_scan_days = 7      # Files untouched for longer are not read until they change.
+show_days = 7            # Sessions idle for longer leave the table, unless still open.
+
+# Spend weights per token type. Units are an estimate, never money.
+[weights]
+input = 1.0
+cache_write_5m = 1.25
+cache_write_1h = 1.25            # Separate from 5m so you can tune it independently.
+cache_write_unspecified = 1.25   # Old transcripts that do not split the two kinds of write.
+cache_read = 0.1
+output = 5.0
+
+# Weight per model. A model NOT listed here is shown as "desconocido": its tokens
+# are displayed but it gets no units (no silent fallback rate). Add it to count it.
+[model_weights]
+"claude-opus-5-5" = 1.0
+"claude-sonnet-5-5" = 1.0
+"claude-haiku-5-5" = 1.0
+"claude-opus-4-6" = 1.0
+"claude-sonnet-4-6" = 1.0
+
+[advice]
+watch_from = 150000            # Below this: "Seguir". From here: "Vigilar".
+clean_from = 200000            # From here, stopped and without active subagents: "Conviene limpiar".
+expired_context_over = 60000   # Stopped past the cache TTL and above this: "Caché caducada, empieza de nuevo".
+new_session_context = 45000    # Rough context of a brand-new session; only used in explanations.
+
+[cache]
+ttl_minutes = 60         # Assumed cache lifetime since the last turn. It can also be 5 minutes.
+
+[states]
+idle_seconds = 60                # Without a hook signal: after a finished turn, "te toca" starts after this long.
+working_stale_minutes = 10       # Unfinished turn with no writes for this long no longer counts as working.
+subagent_stale_minutes = 30      # Unfinished subagent with no writes for this long no longer counts as active.
+recent_activity_minutes = 60     # Where "open" cannot be verified: window labelled "actividad reciente".
+unregistered_grace_minutes = 5   # Session missing from the registry but written to this recently is not "closed".
+
+[notifications]
+max_age_minutes = 10     # A notice older than this is not shown when a tab opens later.
+keep_notices = 100       # Notices kept on disk for delivery.
+
+[hooks]
+max_event_file_bytes = 1048576   # Event file limit. Passed to the hook by the installer; reinstall after changing it.

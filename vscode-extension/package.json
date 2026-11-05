@@ -1,0 +1,17 @@
+{
+  "name": "claude-monitor-companion",
+  "displayName": "claude-monitor companion",
+  "description": "Lets the local claude-monitor panel open a Claude Code session tab in this window.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "extensionKind": ["ui"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": true },
+    "virtualWorkspaces": true
+  }
+}

@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude-monitor</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f6f6f4; --surface: #fcfcfb; --line: #e2e1dc; --track: #ebeae6;
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #6e6d68;
+  --bar: #2a78d6; --accent: #2a78d6;
+  --good: #0a7d3e; --warn: #a86a00; --serious: #c8501a; --critical: #c62f2e; --info: #2a78d6;
+  --flash: #fdf0c4;
+  --vscode: #007acc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111110; --surface: #1a1a19; --line: #33332f; --track: #2b2b28;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #a3a297;
+    --bar: #3987e5; --accent: #6aa6ee;
+    --good: #3fb871; --warn: #dba22e; --serious: #ea8452; --critical: #ee7070; --info: #6aa6ee;
+    --flash: #4a3f12;
+    --vscode: #3ea6ff;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric: tabular-nums; }
+main { max-width: 1500px; margin: 0 auto; padding: 16px 20px 40px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 12px; }
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 13px; margin: 0 0 8px; color: var(--text-2); font-weight: 600; }
+.muted { color: var(--text-3); font-size: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.tile .value { font-size: 26px; font-weight: 600; line-height: 1.15; }
+.tile .label { font-size: 12px; color: var(--text-2); }
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.share-head { display: flex; justify-content: space-between; align-items: center; }
+.share-list { max-height: 190px; overflow-y: auto; }
+.share { display: grid; grid-template-columns: minmax(90px, 190px) 1fr 118px; gap: 8px; align-items: center; padding: 2px 0; font-size: 13px; }
+.share .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share .num { text-align: right; color: var(--text-2); font-size: 12px; white-space: nowrap; }
+.meter { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.meter > i { display: block; height: 100%; background: var(--bar); border-radius: 0 4px 4px 0; min-width: 1px; }
+.seg button { font: inherit; font-size: 12px; padding: 1px 8px; border: 1px solid var(--line); background: none; color: var(--text-2); cursor: pointer; }
+.seg button:first-child { border-radius: 4px 0 0 4px; }
+.seg button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--track); color: var(--text); font-weight: 600; }
+.notes { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; font-size: 13px; color: var(--text-2); }
+.notes .alert { color: var(--text); font-weight: 600; }
+.notify { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 10px; font-size: 13px; }
+.notify label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.notify button { font: inherit; padding: 3px 10px; border: 1px solid var(--accent); color: var(--accent); background: none; border-radius: 5px; cursor: pointer; font-weight: 600; }
+.notify button:disabled { border-color: var(--line); color: var(--text-3); cursor: default; font-weight: 400; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; font-size: 13px; }
+.filters button { display: inline-flex; align-items: center; gap: 6px; font: inherit; padding: 3px 9px; border: 1px solid var(--line); background: none; color: var(--text); border-radius: 5px; cursor: pointer; }
+.filters button[aria-pressed="true"] { border-color: var(--accent); font-weight: 600; }
+.filters .box { width: 12px; height: 12px; border: 1.5px solid var(--text-3); border-radius: 2px; }
+.filters [aria-pressed="true"] .box { background: var(--accent); border-color: var(--accent); }
+.filters .count { color: var(--text-3); font-weight: 400; }
+.filters input[type="search"] { margin-left: auto; width: 240px; max-width: 100%; font: inherit; padding: 3px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--text); }
+.filters input[type="search"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.filters .filter-gap { width: 1px; height: 18px; margin: 0 4px; background: var(--line); }
+.table-wrap { overflow-x: auto; padding: 0; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; font-weight: 600; color: var(--text-2); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; background: var(--surface); }
+td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+tr.closed td { color: var(--text-3); }
+tr.flash td { background: var(--flash); transition: background .4s; }
+th button { all: unset; cursor: pointer; }
+th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+th button:hover { color: var(--text); }
+.project { font-weight: 600; max-width: 230px; overflow-wrap: anywhere; }
+.num-cell { white-space: nowrap; }
+.chip { display: inline-flex; gap: 5px; align-items: baseline; font-weight: 600; white-space: nowrap; }
+.chip b { font-weight: 700; }
+.session-title { display: block; font-size: 13px; font-weight: 400; color: var(--text-2); }
+.sub { display: block; font-size: 12px; color: var(--text-3); font-weight: 400; white-space: normal; }
+.s-good b { color: var(--good); } .s-warn b { color: var(--warn); } .s-serious b { color: var(--serious); }
+.s-critical b { color: var(--critical); } .s-info b { color: var(--info); } .s-none b { color: var(--text-3); }
+.ctx { min-width: 170px; }
+.ctx-num { font-weight: 600; }
+.ctx-track { position: relative; height: 8px; background: var(--track); border-radius: 4px; margin-top: 4px; }
+.ctx-track > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--bar); border-radius: 0 4px 4px 0; }
+.ctx-track > u { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-2); }
+.reason { min-width: 230px; max-width: 360px; }
+.reason .sub { color: var(--text-2); }
+.jump { display: block; width: 26px; height: 26px; margin-top: 3px; padding: 4px; border: 0; background: none; border-radius: 4px; cursor: pointer; }
+.jump svg { display: block; width: 100%; height: 100%; }
+.jump-open { color: var(--vscode); }
+.jump-closed { color: var(--text-3); }
+.jump:hover { background: var(--track); }
+.jump:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.empty { padding: 24px; text-align: center; color: var(--text-2); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>claude-monitor</h1>
+    <span class="muted" id="updated">Cargando…</span>
+    <span class="muted" id="jump-result" role="status"></span>
+  </header>
+  <section class="tiles" id="tiles" aria-label="Resumen"></section>
+  <section class="split">
+    <div class="panel"><div class="share-head"><h2>Reparto por proyecto</h2>
+      <span class="seg"><button data-range="today" aria-pressed="true">Hoy</button><button data-range="week" aria-pressed="false">7 días</button></span></div>
+      <div class="share-list" id="by-project"></div></div>
+    <div class="panel"><div class="share-head"><h2>Reparto por modelo</h2>
+      <span class="seg"><button data-range="today" aria-pressed="true">Hoy</button><button data-range="week" aria-pressed="false">7 días</button></span></div>
+      <div class="share-list" id="by-model"></div></div>
+  </section>
+  <section class="notes" id="notes"></section>
+  <section class="panel notify" aria-label="Notificaciones">
+    <button id="ask" type="button">Permitir notificaciones</button>
+    <button id="test" type="button">Probar aviso</button>
+    <span id="perm"></span>
+    <label><input type="checkbox" id="master"> Avisos activados</label>
+    <span class="muted">Avisar de:</span>
+    <label><input type="checkbox" data-mute="espera_permiso"> espera permiso</label>
+    <label><input type="checkbox" data-mute="te_toca"> te toca</label>
+    <label><input type="checkbox" data-mute="limpiar"> conviene limpiar</label>
+    <label><input type="checkbox" data-mute="caducada"> caché caducada</label>
+    <span class="muted" id="test-result" role="status"></span>
+  </section>
+  <section class="panel filters" id="filters" aria-label="Filtrar sesiones por estado"></section>
+  <section class="panel table-wrap">
+    <table>
+      <thead><tr>
+        <th>Proyecto</th><th>Estado</th><th>Modelo</th>
+        <th data-sort="subagents"><button type="button">Subagentes</button></th>
+        <th data-sort="waiting"><button type="button">Te espera hace</button></th>
+        <th data-sort="context"><button type="button">Contexto actual</button></th>
+        <th data-sort="cache"><button type="button">Caché restante (est.)</button></th>
+        <th data-sort="spend"><button type="button">Gasto de hoy (est.)</button></th>
+        <th>Consejo</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="9" class="empty">Leyendo transcripciones…</td></tr></tbody>
+    </table>
+  </section>
+</main>
+<script>
+"use strict";
+const STATE = {
+  espera_permiso: ["Espera permiso", "◆", "s-critical"],
+  te_toca: ["Te toca", "●", "s-serious"],
+  esperando_agentes: ["Esperando agentes", "◌", "s-info"],
+  trabajando: ["Trabajando", "▶", "s-good"],
+  parada: ["Parada", "■", "s-none"],
+};
+const OPEN = { open: "abierta", closed: "cerrada", recent: "actividad reciente", unknown: "sin actividad reciente" };
+const SOURCE = { hook: "por hook", registro: "por registro de sesiones", historial: "por historial" };
+const ADVICE = {
+  espera: ["Espera", "◌", "s-info"],
+  seguir: ["Seguir", "✓", "s-good"],
+  vigilar: ["Vigilar", "▲", "s-warn"],
+  limpiar: ["Conviene limpiar", "▲", "s-serious"],
+  caducada: ["Caché caducada, empieza de nuevo", "✕", "s-critical"],
+  sin_datos: ["Sin datos", "–", "s-none"],
+};
+const WAIT_TEXT = { espera_permiso: "Espera permiso", te_toca: "Te toca" };
+const LEVEL_TEXT = { limpiar: "conviene limpiar", caducada: "caché caducada, empieza de nuevo" };
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(key, fallback) { try { const v = localStorage.getItem("cm." + key); return v === null ? fallback : JSON.parse(v); } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem("cm." + key, JSON.stringify(value)); } catch {} },
+};
+
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (key === "class") node.className = value;
+    else if (key === "title") node.title = value;
+    else if (key === "style") node.style.cssText = value;
+    else node.setAttribute(key, value);
+  }
+  for (const child of children) if (child !== null && child !== undefined) node.append(child);
+  return node;
+}
+const number = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 });
+function compact(v) {
+  if (v === null || v === undefined) return "–";
+  if (v >= 1e6) return number.format(v / 1e6) + " M";
+  if (v >= 1e3) return Math.round(v / 1e3) + "K";
+  return String(Math.round(v));
+}
+function pct(v) { return number.format(v) + " %"; }
+function duration(seconds) {
+  if (seconds === null || seconds === undefined) return "–";
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return s + " s";
+  const m = Math.round(s / 60);
+  if (m < 60) return m + " min";
+  const h = Math.floor(m / 60);
+  if (h < 48) return h + " h " + String(m % 60).padStart(2, "0") + " min";
+  return Math.round(h / 24) + " días";
+}
+
+/* ---------- Summary ---------- */
+let rangeKey = "today";
+let lastData = null;
+
+function tile(value, label, sub) {
+  return el("div", { class: "panel tile" }, el("div", { class: "value" }, value), el("div", { class: "label" }, label),
+    sub ? el("div", { class: "muted" }, sub) : null);
+}
+function renderTiles(data) {
+  const s = data.summary;
+  const verified = data.signals.liveness_verified;
+  const activeLabel = verified ? "Sesiones abiertas" : "Con actividad reciente";
+  const activeSub = verified && s.recent ? `y ${s.recent} con actividad reciente` : null;
+  $("tiles").replaceChildren(
+    tile(String(verified ? s.open : s.active), activeLabel, activeSub),
+    tile(String(s.waiting), "Te esperan"),
+    tile(String(s.attention), "Requieren atención"),
+    tile(compact(s.today_units), "Gasto de hoy", "unidades ponderadas"),
+    tile(compact(s.week_units), "Gasto en 7 días", "unidades ponderadas"),
+  );
+}
+function shareRow(item) {
+  const value = item[rangeKey], share = item[rangeKey + "_pct"];
+  const unknown = item.known === false;
+  const tokens = item[rangeKey === "today" ? "tokens_today" : "tokens_week"];
+  const nameNode = el("span", { class: "name", title: item.name }, item.name, unknown ? " (desconocido)" : "");
+  const label = unknown ? compact(tokens) + " tokens, sin peso" : `${compact(value)} · ${pct(share)}`;
+  return el("div", { class: "share", title: `${item.name}: ${label}` }, nameNode,
+    el("div", { class: "meter" }, unknown ? null : el("i", { style: `width:${Math.min(100, share)}%` })),
+    el("span", { class: "num" }, label));
+}
+function renderShares(data) {
+  const relevant = (item) => item[rangeKey] > 0 || (item.known === false && item[rangeKey === "today" ? "tokens_today" : "tokens_week"] > 0);
+  const byValue = (a, b) => b[rangeKey] - a[rangeKey];
+  const fill = (id, list) => {
+    const items = list.filter(relevant).sort(byValue);
+    $(id).replaceChildren(...(items.length ? items.map(shareRow) : [el("div", { class: "muted" }, "Sin gasto en este periodo.")]));
+  };
+  fill("by-project", data.summary.projects);
+  fill("by-model", data.summary.models);
+}
+function renderNotes(data) {
+  const sig = data.signals, notes = [];
+  notes.push(el("div", {}, "El gasto es una estimación en unidades ponderadas, no en dinero; caché y consejos son primeras aproximaciones."));
+  if (!sig.hooks_installed && sig.last_hook_event_seconds === null) {
+    notes.push(el("div", { class: "alert" }, "Hooks no instalados: el estado sale solo del historial y del registro de sesiones. «Te toca» se estima y «esperando agentes» es menos preciso."));
+  } else if (!sig.hooks_installed) {
+    notes.push(el("div", { class: "alert" }, "Hooks desinstalados: los eventos que aún se ven son anteriores."));
+  } else {
+    notes.push(el("div", {}, sig.last_hook_event_seconds === null
+      ? "Hooks instalados, sin eventos todavía. Las sesiones abiertas antes de instalarlos podrían necesitar reinicio."
+      : `Hooks instalados; último evento hace ${duration(sig.last_hook_event_seconds)}.`));
+  }
+  notes.push(el("div", {}, sig.liveness_verified
+    ? "«Abierta» está comprobado con el proceso real de cada sesión."
+    : "No se puede comprobar qué sesiones siguen abiertas: se indica «actividad reciente», no «abierta»."));
+  if (data.summary.unknown_models.length) {
+    notes.push(el("div", { class: "alert" }, `Modelos desconocidos, sin peso y fuera de los totales: ${data.summary.unknown_models.join(", ")}. Añádelos a config.toml para contarlos.`));
+  }
+  if (data.scan.bad_lines) notes.push(el("div", { class: "muted" }, `${data.scan.bad_lines} líneas ilegibles ignoradas.`));
+  $("notes").replaceChildren(...notes);
+}
+
+/* ---------- Table ---------- */
+let highlightSid = null;
+let highlightUntil = 0;
+let pointerHeld = false;
+const VSCODE_LOGO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23.15 2.587 18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/></svg>';
+function vscodeButton(row) {
+  if (!row.vscode) return null;
+  const open = row.vscode === "open";
+  const text = open ? "Abierta en VS Code: ir a su ventana" : "Cerrada: reabrirla en VS Code";
+  const button = el("button", { type: "button", class: "jump " + (open ? "jump-open" : "jump-closed"), title: text, "aria-label": text });
+  button.innerHTML = VSCODE_LOGO; // A fixed string of this page, never data.
+  button.addEventListener("click", () => jumpTo(row.sid, !open));
+  return button;
+}
+
+function chip(def, sub) {
+  return el("span", { class: "chip " + def[2] }, el("b", { "aria-hidden": "true" }, def[1]), def[0]);
+}
+function contextCell(row, scale, limits) {
+  const value = row.context;
+  const cell = el("td", { class: "ctx" });
+  if (value === null || value === undefined) {
+    cell.append(el("span", { class: "muted" }, row.context_source === "compact" ? "compactada; se sabrá en el próximo turno" : "sin datos"));
+    return cell;
+  }
+  cell.append(el("span", { class: "ctx-num" }, number.format(value)));
+  if (row.context_source === "clear") cell.append(el("span", { class: "sub" }, "tras /clear"));
+  if (row.context_source === "compact") cell.append(el("span", { class: "sub" }, "tras compactar"));
+  const track = el("div", { class: "ctx-track", title: `Marcas: ${compact(limits.watch_from)} y ${compact(limits.clean_from)}` });
+  track.append(el("i", { style: `width:${100 * value / scale}%` }));
+  track.append(el("u", { style: `left:${100 * limits.watch_from / scale}%` }));
+  track.append(el("u", { style: `left:${100 * limits.clean_from / scale}%` }));
+  cell.append(track);
+  return cell;
+}
+function cacheCell(row) {
+  if (row.cache_seconds_left === null || row.cache_seconds_left === undefined) return el("td", { class: "num-cell muted" }, "–");
+  if (row.cache_seconds_left <= 0) return el("td", { class: "num-cell" }, "caducada", el("span", { class: "sub" }, `hace ${duration(-row.cache_seconds_left)}`));
+  return el("td", { class: "num-cell" }, duration(row.cache_seconds_left));
+}
+function spendCell(row) {
+  const cell = el("td", { class: "num-cell" });
+  const total = row.today_main + row.today_sub;
+  cell.append(el("span", {}, total ? pct(row.today_pct) : "–"));
+  if (total) cell.append(el("span", { class: "sub" }, `principal ${compact(row.today_main)} · subagentes ${compact(row.today_sub)}`));
+  if (row.today_unweighted_tokens) cell.append(el("span", { class: "sub" }, `${compact(row.today_unweighted_tokens)} tokens sin peso`));
+  return cell;
+}
+/* ---------- Filter and sort: display only, notices do not depend on them ---------- */
+const SORT_VALUE = {
+  subagents: (row) => row.subagents,
+  waiting: (row) => row.waiting_seconds,
+  context: (row) => row.context,
+  cache: (row) => row.cache_seconds_left,
+  spend: (row) => row.today_main + row.today_sub,
+};
+let stateFilter = store.get("stateFilter", []).filter((state) => state in STATE);
+let onlyOpen = store.get("onlyOpen", false) === true;
+let onlyVscode = store.get("onlyVscode", false) === true;
+let searchText = ""; // Not remembered: a forgotten search would look like missing sessions.
+let sortKey = store.get("sortKey", null);
+if (!(sortKey in SORT_VALUE)) sortKey = null;
+
+// Where liveness cannot be verified nothing is ever "open": recent activity is the best signal.
+function isOpen(row) {
+  return row.open_state === "open" || (row.open_state === "recent" && !lastData.signals.liveness_verified);
+}
+// Case and accents do not matter: "energia" finds "Energía".
+function folded(text) {
+  return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+function matchesSearch(row) {
+  const words = folded(searchText).split(/\s+/).filter(Boolean);
+  const haystack = folded(row.project) + " " + folded(row.title);
+  return words.every((word) => haystack.includes(word));
+}
+// A remembered choice must not empty the table where there is no VS Code to jump to.
+function vscodeFilterOn() {
+  return onlyVscode && lastData.signals.jump_supported;
+}
+function inScope(rows) {
+  let found = rows.filter(matchesSearch);
+  if (onlyOpen) found = found.filter(isOpen);
+  return vscodeFilterOn() ? found.filter((row) => row.vscode === "open") : found;
+}
+function visibleRows(rows) {
+  const scoped = inScope(rows);
+  const shown = stateFilter.length ? scoped.filter((row) => stateFilter.includes(row.state)) : scoped.slice();
+  if (!sortKey) return shown; // The server already sends the latest activity first.
+  const value = SORT_VALUE[sortKey];
+  // Highest first, no value last. Array.sort is stable: ties keep the latest activity first.
+  const rank = (row) => { const v = value(row); return v === null || v === undefined ? -Infinity : v; };
+  return shown.sort((a, b) => (rank(a) === rank(b) ? 0 : rank(b) - rank(a)));
+}
+function setStateFilter(states) {
+  stateFilter = states;
+  store.set("stateFilter", stateFilter);
+  document.querySelectorAll("[data-state]").forEach((b) => b.setAttribute("aria-pressed", String(stateFilter.includes(b.dataset.state))));
+  if (lastData) renderRows(lastData);
+}
+function setSearch(text) {
+  searchText = text;
+  if ($("search").value !== text) $("search").value = text;
+  if (lastData) renderRows(lastData);
+}
+function setOnlyOpen(value) {
+  onlyOpen = value;
+  store.set("onlyOpen", onlyOpen);
+  $("only-open").setAttribute("aria-pressed", String(onlyOpen));
+  if (lastData) renderRows(lastData);
+}
+function setOnlyVscode(value) {
+  onlyVscode = value;
+  store.set("onlyVscode", onlyVscode);
+  $("only-vscode").setAttribute("aria-pressed", String(onlyVscode));
+  if (lastData) renderRows(lastData);
+}
+function renderSortHeaders() {
+  document.querySelectorAll("th[data-sort]").forEach((th) => {
+    const active = th.dataset.sort === sortKey;
+    if (active) th.setAttribute("aria-sort", "descending"); else th.removeAttribute("aria-sort");
+    th.firstElementChild.title = active ? "Ordenado de mayor a menor. Pulsa para volver a la actividad más reciente" : "Ordenar de mayor a menor";
+    th.firstElementChild.textContent = th.firstElementChild.textContent.replace(/ ▼$/, "") + (active ? " ▼" : "");
+  });
+}
+function setupTableControls() {
+  const openButton = el("button", { type: "button", id: "only-open", "aria-pressed": String(onlyOpen) },
+    el("span", { class: "box", "aria-hidden": "true" }), el("span", { id: "only-open-label" }, "Solo abiertas"), el("span", { class: "count" }, ""));
+  openButton.addEventListener("click", () => setOnlyOpen(!onlyOpen));
+  const vscodeButton = el("button", { type: "button", id: "only-vscode", "aria-pressed": String(onlyVscode), title: "Solo las sesiones abiertas ahora en VS Code, con el logo en color", style: "display:none" },
+    el("span", { class: "box", "aria-hidden": "true" }), "Solo en VS Code", el("span", { class: "count" }, ""));
+  vscodeButton.addEventListener("click", () => setOnlyVscode(!onlyVscode));
+  $("filters").append(openButton, vscodeButton, el("span", { class: "filter-gap", "aria-hidden": "true" }));
+  $("filters").append(...Object.entries(STATE).map(([state, def]) => {
+    const button = el("button", { type: "button", "data-state": state, "aria-pressed": String(stateFilter.includes(state)) },
+      el("span", { class: "box", "aria-hidden": "true" }), def[0], el("span", { class: "count" }, ""));
+    button.addEventListener("click", () => setStateFilter(stateFilter.includes(state)
+      ? stateFilter.filter((other) => other !== state) : [...stateFilter, state]));
+    return button;
+  }), el("span", { class: "muted", id: "filter-result", role: "status" }));
+  const search = el("input", { type: "search", id: "search", placeholder: "Buscar proyecto o sesión", "aria-label": "Buscar por proyecto o nombre de sesión", autocomplete: "off" });
+  search.addEventListener("input", () => setSearch(search.value));
+  $("filters").append(search);
+  document.querySelectorAll("th[data-sort]").forEach((th) => th.firstElementChild.addEventListener("click", () => {
+    sortKey = sortKey === th.dataset.sort ? null : th.dataset.sort;
+    store.set("sortKey", sortKey);
+    renderSortHeaders();
+    if (lastData) renderRows(lastData);
+  }));
+  renderSortHeaders();
+}
+function renderFilterCounts(rows, visible) {
+  const scoped = inScope(rows);
+  document.querySelectorAll("[data-state]").forEach((button) => {
+    button.querySelector(".count").textContent = String(scoped.filter((row) => row.state === button.dataset.state).length);
+  });
+  $("only-open-label").textContent = lastData.signals.liveness_verified ? "Solo abiertas" : "Solo con actividad reciente";
+  $("only-open").querySelector(".count").textContent = String(rows.filter(matchesSearch).filter(isOpen).length);
+  $("only-vscode").style.display = lastData.signals.jump_supported ? "" : "none";
+  $("only-vscode").querySelector(".count").textContent = String(rows.filter(matchesSearch).filter((row) => row.vscode === "open").length);
+  $("filter-result").textContent = onlyOpen || vscodeFilterOn() || stateFilter.length || searchText.trim() ? `Mostrando ${visible} de ${rows.length}` : "Sin marcar: se muestran todas";
+}
+function renderRows(data) {
+  const body = $("rows");
+  const rows = visibleRows(data.rows);
+  renderFilterCounts(data.rows, rows.length);
+  if (!data.rows.length) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: "9", class: "empty" }, "No hay sesiones en la ventana configurada.")));
+    return;
+  }
+  if (!rows.length) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: "9", class: "empty" }, "Ninguna sesión con los filtros marcados.")));
+    return;
+  }
+  const limits = data.limits;
+  // The scale grows with the data, so a very large context is never clipped.
+  const scale = Math.max(limits.clean_from * 1.5, ...data.rows.map((r) => (r.context || 0) * 1.05));
+  const now = Date.now();
+  body.replaceChildren(...rows.map((row) => {
+    const openText = OPEN[row.open_state];
+    const stateCell = el("td", {}, chip(STATE[row.state]), el("span", { class: "sub" }, openText,
+      row.state_source && (row.state === "espera_permiso" || row.state === "te_toca") ? " · " + SOURCE[row.state_source] : ""));
+    const modelCell = el("td", { class: "num-cell" }, row.model || "–",
+      row.model && !row.model_known ? el("span", { class: "sub" }, "desconocido") : null);
+    const flash = row.sid === highlightSid && now < highlightUntil;
+    const tr = el("tr", { "data-sid": row.sid, class: (row.closed ? "closed " : "") + (flash ? "flash" : "") },
+      el("td", { class: "project" }, row.project || "–", row.title ? el("span", { class: "session-title" }, row.title) : null, el("span", { class: "sub", title: "Última actividad" }, `${row.short_id} · hace ${duration(row.last_activity_seconds)}`), vscodeButton(row)),
+      stateCell, modelCell,
+      el("td", { class: "num-cell" }, row.subagents ? `${row.subagents} activo${row.subagents > 1 ? "s" : ""}` : "–"),
+      el("td", { class: "num-cell" }, row.waiting_seconds === null ? "–" : duration(row.waiting_seconds)),
+      contextCell(row, scale, limits), cacheCell(row), spendCell(row),
+      el("td", { class: "reason" }, chip(ADVICE[row.advice]), el("span", { class: "sub" }, row.reason)));
+    return tr;
+  }));
+}
+async function jumpTo(sid, reopening) {
+  // A new window takes seconds: without this the click would seem lost.
+  $("jump-result").textContent = reopening ? "Abriendo en VS Code…" : "";
+  let result;
+  try {
+    const response = await fetch("/api/jump", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sid }) });
+    result = await response.json();
+  } catch {
+    result = { ok: false, message: "No se ha podido contactar con el panel." };
+  }
+  $("jump-result").textContent = result.message;
+  return result.ok;
+}
+function focusSession(sid) {
+  highlightSid = sid;
+  highlightUntil = Date.now() + 8000;
+  // A clicked notice must always find its session, even if the filter hides it.
+  const target = lastData && lastData.rows.find((row) => row.sid === sid);
+  if (target && stateFilter.length && !stateFilter.includes(target.state)) setStateFilter([]);
+  if (target && onlyOpen && !isOpen(target)) setOnlyOpen(false);
+  if (target && onlyVscode && target.vscode !== "open") setOnlyVscode(false);
+  if (target && !matchesSearch(target)) setSearch("");
+  if (lastData) renderRows(lastData);
+  const row = document.querySelector(`tr[data-sid="${CSS.escape(sid)}"]`);
+  if (row) row.scrollIntoView({ block: "center" });
+}
+
+/* ---------- Notifications ---------- */
+function noticeText(notice) {
+  const mute = store.get("mute", {});
+  const wait = notice.wait && !mute[notice.wait] ? notice.wait : null;
+  const level = notice.level && !mute[notice.level] ? notice.level : null;
+  if (!wait && !level) return null;
+  const parts = [];
+  if (wait) parts.push(WAIT_TEXT[wait]);
+  parts.push(notice.project);
+  if (level) parts.push(compact(notice.tokens), LEVEL_TEXT[level]);
+  return parts.join(" · ");
+}
+function deliver(notice) {
+  if (!("Notification" in window) || Notification.permission !== "granted" || !store.get("enabled", true)) return;
+  const text = noticeText(notice);
+  if (!text) return;
+  const shown = new Notification(text, { tag: "claude-monitor-" + notice.seq });
+  shown.onclick = async () => {
+    shown.close();
+    focusSession(notice.sid); // Leaves the row marked for when you come back to the panel.
+    const row = lastData && lastData.rows.find((candidate) => candidate.sid === notice.sid);
+    // Without a VS Code tab to go to, or if the jump fails, the panel is the next best place.
+    if (!row || row.vscode !== "open" || !(await jumpTo(notice.sid))) window.focus();
+  };
+}
+function processNotices(data) {
+  const remembered = store.get("lastSeq", null);
+  if (remembered === null || remembered > data.notice_seq) {
+    // First visit in this browser (or server state was reset): nothing old pops up.
+    store.set("lastSeq", data.notice_seq);
+    return;
+  }
+  for (const notice of data.notices) if (notice.seq > store.get("lastSeq", 0)) {
+    store.set("lastSeq", notice.seq); // Written first: another tab will not repeat it.
+    deliver(notice);
+  }
+  if (data.notice_seq > store.get("lastSeq", 0)) store.set("lastSeq", data.notice_seq);
+}
+function renderPermission() {
+  const ask = $("ask"), perm = $("perm");
+  if (!("Notification" in window)) { ask.disabled = true; perm.textContent = "Este navegador no admite notificaciones."; return; }
+  const text = { granted: "Permiso concedido.", denied: "Permiso denegado: actívalo en los ajustes del sitio.", default: "Permiso sin pedir." };
+  perm.textContent = text[Notification.permission];
+  ask.disabled = Notification.permission !== "default";
+  $("test").disabled = Notification.permission !== "granted";
+}
+function sendTest() {
+  // Same switches and wording as real notices, so the test also proves the filters.
+  const result = $("test-result");
+  if (!store.get("enabled", true)) { result.textContent = "Avisos desactivados: no se envía ninguna prueba."; return; }
+  const project = "aviso de prueba";
+  const samples = [
+    { project, wait: "espera_permiso", level: null, tokens: 0 },
+    { project, wait: "te_toca", level: null, tokens: 0 },
+    { project, wait: null, level: "limpiar", tokens: 310000 },
+    { project, wait: null, level: "caducada", tokens: 310000 },
+  ];
+  const texts = samples.map(noticeText).filter(Boolean);
+  // A new tag per click: reusing one replaces the old notice without a new banner.
+  const click = Date.now();
+  texts.forEach((text, index) => new Notification(text, { tag: `claude-monitor-test-${click}-${index}` }));
+  result.textContent = texts.length ? `Enviados ${texts.length} de ${samples.length} tipos.` : "No hay ningún tipo marcado: no se envía ninguna prueba.";
+}
+function setupNotifyControls() {
+  $("ask").addEventListener("click", async () => { await Notification.requestPermission(); renderPermission(); });
+  $("test").addEventListener("click", sendTest);
+  const master = $("master");
+  master.checked = store.get("enabled", true);
+  master.addEventListener("change", () => store.set("enabled", master.checked));
+  const mute = store.get("mute", {});
+  document.querySelectorAll("[data-mute]").forEach((box) => {
+    box.checked = !mute[box.dataset.mute];
+    box.addEventListener("change", () => {
+      const current = store.get("mute", {});
+      current[box.dataset.mute] = !box.checked;
+      store.set("mute", current);
+    });
+  });
+  renderPermission();
+}
+
+/* ---------- Loop ---------- */
+function renderUpdated(data) {
+  $("updated").textContent = data.scan.ready
+    ? `Actualizado ${new Date(data.now * 1000).toLocaleTimeString("es-ES")} · ${data.scan.files} ficheros`
+    : "Leyendo transcripciones…";
+}
+async function refresh() {
+  let data;
+  try {
+    const response = await fetch("/api/state", { cache: "no-store" });
+    data = await response.json();
+  } catch {
+    $("updated").textContent = "Sin conexión con el servidor del panel.";
+    document.title = "(sin conexión) claude-monitor";
+    return;
+  }
+  if (!data.scan || !data.scan.ready) return;
+  lastData = data;
+  renderUpdated(data);
+  renderTiles(data);
+  renderShares(data);
+  renderNotes(data);
+  // A row replaced between press and release would lose the click.
+  if (!pointerHeld) renderRows(data);
+  renderPermission();
+  processNotices(data);
+  document.title = (data.summary.attention ? `(${data.summary.attention}) ` : "") + "claude-monitor";
+}
+document.querySelectorAll("[data-range]").forEach((button) => button.addEventListener("click", () => {
+  rangeKey = button.dataset.range;
+  document.querySelectorAll("[data-range]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.range === rangeKey)));
+  if (lastData) renderShares(lastData);
+}));
+$("rows").addEventListener("pointerdown", () => { pointerHeld = true; });
+for (const type of ["pointerup", "pointercancel"]) window.addEventListener(type, () => { pointerHeld = false; });
+setupNotifyControls();
+setupTableControls();
+refresh();
+// Browsers slow down timers in background tabs, so notices would arrive late.
+// A worker's timer is not throttled that way; a page timer is the fallback.
+const INTERVAL_MS = 3000;
+try {
+  const source = `setInterval(() => postMessage(0), ${INTERVAL_MS});`;
+  const worker = new Worker(URL.createObjectURL(new Blob([source], { type: "text/javascript" })));
+  worker.onmessage = refresh;
+} catch {
+  setInterval(refresh, INTERVAL_MS);
+}
+</script>
+</body>
+</html>
